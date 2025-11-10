@@ -2,15 +2,14 @@ const express = require('express');
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsdoc = require('swagger-jsdoc');
 const createLogger = require('./logger');
+const connectDB = require('./db');
+const Item = require('./models/item');
 
 const app = express();
 const port = process.env.PORT || 3000;
 const logger = createLogger('server');
 
 app.use(express.json());
-
-const items = [];
-let nextId = 1;
 
 const swaggerSpec = swaggerJsdoc({
   definition: {
@@ -94,48 +93,75 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
  *         description: Success
  */
 
-app.get('/api/items', (req, res) => {
-  logger.info('Fetch all items');
-  res.json({ success: true, data: items });
-});
-
-app.post('/api/items', (req, res) => {
-  const item = { id: nextId, ...req.body };
-  nextId += 1;
-  items.push(item);
-  logger.info(`Create item ${item.id}`);
-  res.json({ success: true, data: item });
-});
-
-app.get('/api/items/:id', (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  const item = items.find((i) => i.id === id);
-  logger.info(`Get item ${id}`);
-  res.json({ success: true, data: item || null });
-});
-
-app.put('/api/items/:id', (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  const index = items.findIndex((i) => i.id === id);
-  if (index >= 0) {
-    items[index] = { ...items[index], ...req.body };
+app.get('/api/items', async (req, res) => {
+  try {
+    const items = await Item.find().lean();
+    logger.info('Fetch all items');
+    res.json({ success: true, data: items });
+  } catch (error) {
+    logger.error(`Fetch all items failed: ${error.message}`);
+    res.json({ success: true, data: [], error: error.message });
   }
-  logger.info(`Update item ${id}`);
-  res.json({ success: true, data: items[index] || null });
 });
 
-app.delete('/api/items/:id', (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  const index = items.findIndex((i) => i.id === id);
-  let deleted = null;
-  if (index >= 0) {
-    deleted = items.splice(index, 1)[0];
+app.post('/api/items', async (req, res) => {
+  try {
+    const item = await Item.create(req.body);
+    logger.info(`Create item ${item._id}`);
+    res.json({ success: true, data: item });
+  } catch (error) {
+    logger.error(`Create item failed: ${error.message}`);
+    res.json({ success: true, data: null, error: error.message });
   }
-  logger.info(`Delete item ${id}`);
-  res.json({ success: true, data: deleted });
 });
 
-app.listen(port, () => {
-  logger.info(`Server running on port ${port}`);
+app.get('/api/items/:id', async (req, res) => {
+  try {
+    const item = await Item.findById(req.params.id).lean();
+    logger.info(`Get item ${req.params.id}`);
+    res.json({ success: true, data: item || null });
+  } catch (error) {
+    logger.error(`Get item failed: ${error.message}`);
+    res.json({ success: true, data: null, error: error.message });
+  }
 });
+
+app.put('/api/items/:id', async (req, res) => {
+  try {
+    const item = await Item.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+      runValidators: true,
+    }).lean();
+    logger.info(`Update item ${req.params.id}`);
+    res.json({ success: true, data: item || null });
+  } catch (error) {
+    logger.error(`Update item failed: ${error.message}`);
+    res.json({ success: true, data: null, error: error.message });
+  }
+});
+
+app.delete('/api/items/:id', async (req, res) => {
+  try {
+    const item = await Item.findByIdAndDelete(req.params.id).lean();
+    logger.info(`Delete item ${req.params.id}`);
+    res.json({ success: true, data: item || null });
+  } catch (error) {
+    logger.error(`Delete item failed: ${error.message}`);
+    res.json({ success: true, data: null, error: error.message });
+  }
+});
+
+async function startServer() {
+  try {
+    await connectDB();
+    app.listen(port, () => {
+      logger.info(`Server running on port ${port}`);
+    });
+  } catch (error) {
+    logger.error(`Server startup failed: ${error.message}`);
+    process.exit(1);
+  }
+}
+
+startServer();
 
