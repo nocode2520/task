@@ -1,7 +1,7 @@
 {
   "name": "mern-backend",
   "version": "1.0.0",
-  "description": "Express backend providing CRUD APIs, Swagger documentation, and structured logging.",
+  "description": "Express backend providing user authentication and management APIs with Swagger documentation and structured logging.",
   "main": "src/index.js",
   "type": "commonjs",
   "scripts": {
@@ -12,11 +12,11 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "bcrypt": "^5.1.1",
     "express": "^4.19.2",
     "mongoose": "^8.5.1",
     "swagger-jsdoc": "^6.2.8",
-    "swagger-ui-express": "^5.0.1",
-    "winston": "^3.11.0"
+    "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.3"

@@ -1,9 +1,10 @@
 const express = require('express');
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsdoc = require('swagger-jsdoc');
+const bcrypt = require('bcrypt');
 const createLogger = require('./logger');
 const connectDB = require('./db');
-const Item = require('./models/item');
+const User = require('./models/user');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -15,7 +16,7 @@ const swaggerSpec = swaggerJsdoc({
   definition: {
     openapi: '3.0.0',
     info: {
-      title: 'Items API',
+      title: 'MERN Backend API',
       version: '1.0.0',
     },
   },
@@ -26,46 +27,79 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 /**
  * @openapi
- * /api/items:
- *   get:
- *     summary: Get all items
- *     responses:
- *       200:
- *         description: Success
+ * /register:
  *   post:
- *     summary: Create an item
+ *     summary: Register a new user
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - username
+ *               - password
+ *               - mobile
  *             properties:
- *               name:
+ *               username:
  *                 type: string
- *                 example: Sample item
+ *                 example: john_doe
+ *               password:
+ *                 type: string
+ *                 example: password123
+ *               mobile:
+ *                 type: string
+ *                 example: 1234567890
  *     responses:
  *       200:
  *         description: Success
- * /api/items/{id}:
+ * /login:
+ *   post:
+ *     summary: Login user
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - username
+ *               - password
+ *             properties:
+ *               username:
+ *                 type: string
+ *                 example: john_doe
+ *               password:
+ *                 type: string
+ *                 example: password123
+ *     responses:
+ *       200:
+ *         description: Success
+ * /users:
  *   get:
- *     summary: Get a single item by id
+ *     summary: Get all users
+ *     responses:
+ *       200:
+ *         description: Success
+ * /users/{id}:
+ *   get:
+ *     summary: Get single user by id
  *     parameters:
  *       - in: path
  *         name: id
  *         schema:
- *           type: integer
+ *           type: string
  *         required: true
  *     responses:
  *       200:
  *         description: Success
  *   put:
- *     summary: Update an item
+ *     summary: Update user details
  *     parameters:
  *       - in: path
  *         name: id
  *         schema:
- *           type: integer
+ *           type: string
  *         required: true
  *     requestBody:
  *       required: true
@@ -74,79 +108,119 @@ app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
  *           schema:
  *             type: object
  *             properties:
- *               name:
+ *               username:
  *                 type: string
- *                 example: Updated item
+ *               password:
+ *                 type: string
+ *               mobile:
+ *                 type: string
  *     responses:
  *       200:
  *         description: Success
  *   delete:
- *     summary: Delete an item
+ *     summary: Delete user
  *     parameters:
  *       - in: path
  *         name: id
  *         schema:
- *           type: integer
+ *           type: string
  *         required: true
  *     responses:
  *       200:
  *         description: Success
  */
 
-app.get('/api/items', async (req, res) => {
+// User Authentication Routes
+app.post('/register', async (req, res) => {
   try {
-    const items = await Item.find().lean();
-    logger.info('Fetch all items');
-    res.json({ success: true, data: items });
+    const { username, password, mobile } = req.body;
+    if (!username || !password || !mobile) {
+      logger.warn('Register failed: Missing required fields');
+      return res.json({ success: true, data: null, error: 'Username, password, and mobile are required' });
+    }
+    const user = await User.create({ username, password, mobile });
+    logger.info(`User registered: ${user._id}`);
+    res.json({ success: true, data: { id: user._id, username: user.username, mobile: user.mobile } });
   } catch (error) {
-    logger.error(`Fetch all items failed: ${error.message}`);
+    logger.error(`Register failed: ${error.message}`);
+    res.json({ success: true, data: null, error: error.message });
+  }
+});
+
+app.post('/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      logger.warn('Login failed: Missing username or password');
+      return res.json({ success: true, data: null, error: 'Username and password are required' });
+    }
+    const user = await User.findOne({ username });
+    if (!user) {
+      logger.warn(`Login failed: User not found - ${username}`);
+      return res.json({ success: true, data: null, error: 'Invalid credentials' });
+    }
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      logger.warn(`Login failed: Invalid password for ${username}`);
+      return res.json({ success: true, data: null, error: 'Invalid credentials' });
+    }
+    logger.info(`User logged in: ${user._id}`);
+    res.json({ success: true, data: { id: user._id, username: user.username, mobile: user.mobile } });
+  } catch (error) {
+    logger.error(`Login failed: ${error.message}`);
+    res.json({ success: true, data: null, error: error.message });
+  }
+});
+
+// User Management Routes
+app.get('/users', async (req, res) => {
+  try {
+    const users = await User.find().select('-password').lean();
+    logger.info('Fetch all users');
+    res.json({ success: true, data: users });
+  } catch (error) {
+    logger.error(`Fetch all users failed: ${error.message}`);
     res.json({ success: true, data: [], error: error.message });
   }
 });
 
-app.post('/api/items', async (req, res) => {
+app.get('/users/:id', async (req, res) => {
   try {
-    const item = await Item.create(req.body);
-    logger.info(`Create item ${item._id}`);
-    res.json({ success: true, data: item });
+    const user = await User.findById(req.params.id).select('-password').lean();
+    logger.info(`Get user ${req.params.id}`);
+    res.json({ success: true, data: user || null });
   } catch (error) {
-    logger.error(`Create item failed: ${error.message}`);
+    logger.error(`Get user failed: ${error.message}`);
     res.json({ success: true, data: null, error: error.message });
   }
 });
 
-app.get('/api/items/:id', async (req, res) => {
+app.put('/users/:id', async (req, res) => {
   try {
-    const item = await Item.findById(req.params.id).lean();
-    logger.info(`Get item ${req.params.id}`);
-    res.json({ success: true, data: item || null });
-  } catch (error) {
-    logger.error(`Get item failed: ${error.message}`);
-    res.json({ success: true, data: null, error: error.message });
-  }
-});
-
-app.put('/api/items/:id', async (req, res) => {
-  try {
-    const item = await Item.findByIdAndUpdate(req.params.id, req.body, {
+    const updateData = { ...req.body };
+    if (updateData.password) {
+      const salt = await bcrypt.genSalt(10);
+      updateData.password = await bcrypt.hash(updateData.password, salt);
+    }
+    const user = await User.findByIdAndUpdate(req.params.id, updateData, {
       new: true,
       runValidators: true,
-    }).lean();
-    logger.info(`Update item ${req.params.id}`);
-    res.json({ success: true, data: item || null });
+    }).select('-password').lean();
+    logger.info(`Update user ${req.params.id}`);
+    res.json({ success: true, data: user || null });
   } catch (error) {
-    logger.error(`Update item failed: ${error.message}`);
+    logger.error(`Update user failed: ${error.message}`);
     res.json({ success: true, data: null, error: error.message });
   }
 });
 
-app.delete('/api/items/:id', async (req, res) => {
+app.delete('/users/:id', async (req, res) => {
   try {
-    const item = await Item.findByIdAndDelete(req.params.id).lean();
-    logger.info(`Delete item ${req.params.id}`);
-    res.json({ success: true, data: item || null });
+    const user = await User.findByIdAndDelete(req.params.id).select('-password').lean();
+    logger.info(`Delete user ${req.params.id}`);
+    res.json({ success: true, data: user || null });
   } catch (error) {
-    logger.error(`Delete item failed: ${error.message}`);
+    logger.error(`Delete user failed: ${error.message}`);
     res.json({ success: true, data: null, error: error.message });
   }
 });
@@ -164,4 +238,3 @@ async function startServer() {
 }
 
 startServer();
-
